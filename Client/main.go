@@ -1,6 +1,7 @@
 package main
 
 import (
+    "compress/gzip"
     "encoding/json"
     "fmt"
     "io"
@@ -61,7 +62,7 @@ func createTempAndUpload(filePath, serverURL string) error {
     }
     defer os.Remove(tmpFilePath)
 
-    if err := uploadFile(tmpFilePath, serverURL); err != nil {
+    if err := gzipAndUploadFile(tmpFilePath, serverURL); err != nil {
         return err
     }
 
@@ -86,20 +87,40 @@ func copyFile(src, dst string) error {
     return err
 }
 
-func uploadFile(filePath, serverURL string) error {
+func gzipAndUploadFile(filePath, serverURL string) error {
     file, err := os.Open(filePath)
     if err != nil {
         return err
     }
     defer file.Close()
 
-    request, err := http.NewRequest("POST", serverURL+"/uploadfile/", file)
+    gzipFilePath := filePath + ".gz"
+    gzipFile, err := os.Create(gzipFilePath)
+    if err != nil {
+        return err
+    }
+    defer os.Remove(gzipFilePath)
+    defer gzipFile.Close()
+
+    gzipWriter := gzip.NewWriter(gzipFile)
+    if _, err := io.Copy(gzipWriter, file); err != nil {
+        return err
+    }
+    gzipWriter.Close()
+
+    gzipFile, err = os.Open(gzipFilePath)
+    if err != nil {
+        return err
+    }
+    defer gzipFile.Close()
+
+    request, err := http.NewRequest("POST", serverURL+"/uploadfile/", gzipFile)
     if err != nil {
         return err
     }
 
-    request.Header.Set("Content-Type", "application/octet-stream")
-    request.Header.Set("filename", filepath.Base(filePath))
+    request.Header.Set("Content-Type", "application/gzip")
+    request.Header.Set("filename", filepath.Base(gzipFilePath))
 
     client := &http.Client{}
     response, err := client.Do(request)
