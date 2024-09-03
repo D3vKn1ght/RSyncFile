@@ -8,16 +8,9 @@ app = FastAPI()
 UPLOAD_FOLDER = "/upload"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-@app.get("/")
-async def root():
-    return {"message": "Hello World"}
-
 @app.post("/uploadfile/")
 async def upload_file(file: UploadFile = File(...), filename: str = Header(...)):
     try:
-        if not file:
-            raise HTTPException(status_code=400, detail="No file uploaded")
-
         tmp_file_location = os.path.join(UPLOAD_FOLDER, f"{filename}.tmp")
         os.makedirs(os.path.dirname(tmp_file_location), exist_ok=True)
         with open(tmp_file_location, "wb") as tmp_file:
@@ -42,6 +35,21 @@ async def upload_file(file: UploadFile = File(...), filename: str = Header(...))
             os.remove(tmp_file_location)
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
+@app.delete("/deletefile/")
+async def delete_file(filename: str = Header(...)):
+    try:
+        file_location = os.path.join(UPLOAD_FOLDER, filename)
+        if os.path.exists(file_location):
+            os.remove(file_location)
+            return {"status": "File deleted successfully"}
+        else:
+            raise HTTPException(status_code=404, detail="File not found")
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=7888)

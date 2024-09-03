@@ -37,13 +37,19 @@ func loadConfig(configPath string) (Config, error) {
 	return config, err
 }
 
+func convertToLinuxPath(winPath string) string {
+	return strings.ReplaceAll(winPath, "\\", "/")
+}
+
 func checkForChanges(folder string, lastModTimes map[string]time.Time, serverURL string) {
 	files, _ := ioutil.ReadDir(folder)
+	seenFiles := make(map[string]bool)
 
 	for _, file := range files {
 		if !file.IsDir() {
 			filePath := filepath.Join(folder, file.Name())
 			fileModTime := file.ModTime()
+			seenFiles[filePath] = true
 
 			if lastModTimes[filePath].Before(fileModTime) {
 				lastModTimes[filePath] = fileModTime
@@ -53,6 +59,15 @@ func checkForChanges(folder string, lastModTimes map[string]time.Time, serverURL
 			}
 		} else {
 			checkForChanges(filepath.Join(folder, file.Name()), lastModTimes, serverURL)
+		}
+	}
+
+	for filePath := range lastModTimes {
+		if !seenFiles[filePath] {
+			if err := deleteFileOnServer(filePath, folder, serverURL); err != nil {
+				log.Printf("Failed to delete file %s on server: %v\n", filePath, err)
+			}
+			delete(lastModTimes, filePath)
 		}
 	}
 }
@@ -66,7 +81,7 @@ func createTempAndUpload(filePath, rootFolder, serverURL string) error {
 	defer os.Remove(tmpFilePath)
 
 	relativePath := strings.TrimPrefix(tmpFilePath, rootFolder)
-	relativePath = strings.ReplaceAll(relativePath, "\\", "/")
+	relativePath = convertToLinuxPath(relativePath)
 
 	if err := gzipAndUploadFile(tmpFilePath, relativePath, serverURL); err != nil {
 		return err
@@ -137,6 +152,31 @@ func gzipAndUploadFile(filePath, relativePath, serverURL string) error {
 
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("upload failed with status: %s", response.Status)
+	}
+
+	return nil
+}
+
+func deleteFileOnServer(filePath, rootFolder, serverURL string) error {
+	relativePath := strings.TrimPrefix(filePath, rootFolder)
+	relativePath = convertToLinuxPath(relativePath)
+
+	request, err := http.NewRequest("DELETE", serverURL+"/deletefile/", nil)
+	if err != nil {
+		return err
+	}
+
+	request.Header.Set("filename", relativePath)
+
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("delete failed with status: %s", response.Status)
 	}
 
 	return nil
