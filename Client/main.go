@@ -15,8 +15,9 @@ import (
 )
 
 type Config struct {
-    URL           string `json:"url"`
-    FolderToWatch string `json:"folder_to_watch"`
+    URL             string `json:"url"`
+    FolderToWatch   string `json:"folder_to_watch"`
+    FolderToReceive string `json:"folder_to_receive"`
 }
 
 func loadConfig(configPath string) (Config, error) {
@@ -34,6 +35,60 @@ func loadConfig(configPath string) (Config, error) {
 
     err = json.Unmarshal(bytes, &config)
     return config, err
+}
+
+func downloadFiles(serverURL, folderToReceive string) error {
+    response, err := http.Get(serverURL + "/download/")
+    if err != nil {
+        return fmt.Errorf("failed to fetch file list: %v", err)
+    }
+    defer response.Body.Close()
+
+    var result struct {
+        Files []string `json:"files"`
+    }
+    if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+        return fmt.Errorf("failed to decode file list: %v", err)
+    }
+
+    if len(result.Files) == 0 {
+        fmt.Println("No files to download.")
+        return nil
+    }
+
+    for _, filename := range result.Files {
+        downloadURL := fmt.Sprintf("%s/download/%s", serverURL, filename)
+        filePath := filepath.Join(folderToReceive, filename)
+        err := downloadFile(downloadURL, filePath)
+        if err != nil {
+            fmt.Printf("Failed to download %s: %v\n", filename, err)
+            continue
+        }
+        fmt.Printf("Downloaded %s to %s\n", filename, filePath)
+    }
+    return nil
+}
+
+func downloadFile(url, destPath string) error {
+    response, err := http.Get(url)
+    if err != nil {
+        return err
+    }
+    defer response.Body.Close()
+
+    if response.StatusCode != http.StatusOK {
+        return fmt.Errorf("failed to download file: %s", response.Status)
+    }
+
+    os.MkdirAll(filepath.Dir(destPath), os.ModePerm)
+    out, err := os.Create(destPath)
+    if err != nil {
+        return err
+    }
+    defer out.Close()
+
+    _, err = io.Copy(out, response.Body)
+    return err
 }
 
 func convertToLinuxPath(winPath string) string {
@@ -166,6 +221,11 @@ func main() {
     if err != nil {
         fmt.Printf("Failed to load config: %v\n", err)
         return
+    }
+
+    err = downloadFiles(config.URL, config.FolderToReceive)
+    if err != nil {
+        fmt.Printf("Failed to download files: %v\n", err)
     }
 
     folderToWatch := config.FolderToWatch

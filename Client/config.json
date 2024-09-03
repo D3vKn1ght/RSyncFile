@@ -1,4 +1,5 @@
 {
-    "url": "http://localhost:8000",
-    "folder_to_watch": "C:\\PathToYourFolder"
+    "url": "http://localhost:7888",
+    "folder_to_watch": "C:\\PathToWatch",
+    "folder_to_receive":"C:\\PathToReceive"
 }
