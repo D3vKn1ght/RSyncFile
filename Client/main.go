@@ -1,156 +1,162 @@
 package main
 
 import (
-    "compress/gzip"
-    "encoding/json"
-    "fmt"
-    "io"
-    "io/ioutil"
-    "log"
-    "net/http"
-    "os"
-    "path/filepath"
-    "time"
+	"compress/gzip"
+	"encoding/json"
+	"fmt"
+	"io"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 )
 
 type Config struct {
-    URL            string `json:"url"`
-    FolderToWatch  string `json:"folder_to_watch"`
+	URL           string `json:"url"`
+	FolderToWatch string `json:"folder_to_watch"`
 }
 
 func loadConfig(configPath string) (Config, error) {
-    var config Config
+	var config Config
 
-    file, err := os.Open(configPath)
-    if err != nil {
-        return config, err
-    }
-    defer file.Close()
+	file, err := os.Open(configPath)
+	if err != nil {
+		return config, err
+	}
+	defer file.Close()
 
-    bytes, err := ioutil.ReadAll(file)
-    if err != nil {
-        return config, err
-    }
+	bytes, err := ioutil.ReadAll(file)
+	if err != nil {
+		return config, err
+	}
 
-    err = json.Unmarshal(bytes, &config)
-    return config, err
+	err = json.Unmarshal(bytes, &config)
+	return config, err
 }
 
 func checkForChanges(folder string, lastModTimes map[string]time.Time, serverURL string) {
-    files, _ := ioutil.ReadDir(folder)
+	files, _ := ioutil.ReadDir(folder)
 
-    for _, file := range files {
-        if !file.IsDir() {
-            filePath := filepath.Join(folder, file.Name())
-            fileModTime := file.ModTime()
+	for _, file := range files {
+		if !file.IsDir() {
+			filePath := filepath.Join(folder, file.Name())
+			fileModTime := file.ModTime()
 
-            if lastModTimes[filePath].Before(fileModTime) {
-                lastModTimes[filePath] = fileModTime
-                if err := createTempAndUpload(filePath, serverURL); err != nil {
-                    log.Printf("Failed to upload file %s: %v\n", filePath, err)
-                }
-            }
-        }
-    }
+			if lastModTimes[filePath].Before(fileModTime) {
+				lastModTimes[filePath] = fileModTime
+				if err := createTempAndUpload(filePath, folder, serverURL); err != nil {
+					log.Printf("Failed to upload file %s: %v\n", filePath, err)
+				}
+			}
+		} else {
+			checkForChanges(filepath.Join(folder, file.Name()), lastModTimes, serverURL)
+		}
+	}
 }
 
-func createTempAndUpload(filePath, serverURL string) error {
-    tmpFilePath := filePath + ".tmp"
+func createTempAndUpload(filePath, rootFolder, serverURL string) error {
+	tmpFilePath := filePath + ".tmp"
 
-    if err := copyFile(filePath, tmpFilePath); err != nil {
-        return err
-    }
-    defer os.Remove(tmpFilePath)
+	if err := copyFile(filePath, tmpFilePath); err != nil {
+		return err
+	}
+	defer os.Remove(tmpFilePath)
 
-    if err := gzipAndUploadFile(tmpFilePath, serverURL); err != nil {
-        return err
-    }
+	relativePath := strings.TrimPrefix(tmpFilePath, rootFolder)
+	relativePath = strings.ReplaceAll(relativePath, "\\", "/")
 
-    os.Rename(tmpFilePath, filePath)
-    return nil
+	if err := gzipAndUploadFile(tmpFilePath, relativePath, serverURL); err != nil {
+		return err
+	}
+
+	os.Rename(tmpFilePath, filePath)
+	return nil
 }
 
 func copyFile(src, dst string) error {
-    sourceFile, err := os.Open(src)
-    if err != nil {
-        return err
-    }
-    defer sourceFile.Close()
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
 
-    destinationFile, err := os.Create(dst)
-    if err != nil {
-        return err
-    }
-    defer destinationFile.Close()
+	destinationFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destinationFile.Close()
 
-    _, err = io.Copy(destinationFile, sourceFile)
-    return err
+	_, err = io.Copy(destinationFile, sourceFile)
+	return err
 }
 
-func gzipAndUploadFile(filePath, serverURL string) error {
-    file, err := os.Open(filePath)
-    if err != nil {
-        return err
-    }
-    defer file.Close()
+func gzipAndUploadFile(filePath, relativePath, serverURL string) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
 
-    gzipFilePath := filePath + ".gz"
-    gzipFile, err := os.Create(gzipFilePath)
-    if err != nil {
-        return err
-    }
-    defer os.Remove(gzipFilePath)
-    defer gzipFile.Close()
+	gzipFilePath := filePath + ".gz"
+	gzipFile, err := os.Create(gzipFilePath)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(gzipFilePath)
+	defer gzipFile.Close()
 
-    gzipWriter := gzip.NewWriter(gzipFile)
-    if _, err := io.Copy(gzipWriter, file); err != nil {
-        return err
-    }
-    gzipWriter.Close()
+	gzipWriter := gzip.NewWriter(gzipFile)
+	if _, err := io.Copy(gzipWriter, file); err != nil {
+		return err
+	}
+	gzipWriter.Close()
 
-    gzipFile, err = os.Open(gzipFilePath)
-    if err != nil {
-        return err
-    }
-    defer gzipFile.Close()
+	gzipFile, err = os.Open(gzipFilePath)
+	if err != nil {
+		return err
+	}
+	defer gzipFile.Close()
 
-    request, err := http.NewRequest("POST", serverURL+"/uploadfile/", gzipFile)
-    if err != nil {
-        return err
-    }
+	request, err := http.NewRequest("POST", serverURL+"/uploadfile/", gzipFile)
+	if err != nil {
+		return err
+	}
 
-    request.Header.Set("Content-Type", "application/gzip")
-    request.Header.Set("filename", filepath.Base(gzipFilePath))
+	request.Header.Set("Content-Type", "application/gzip")
+	request.Header.Set("filename", relativePath)
 
-    client := &http.Client{}
-    response, err := client.Do(request)
-    if err != nil {
-        return err
-    }
-    defer response.Body.Close()
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
 
-    if response.StatusCode != http.StatusOK {
-        return fmt.Errorf("upload failed with status: %s", response.Status)
-    }
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("upload failed with status: %s", response.Status)
+	}
 
-    return nil
+	return nil
 }
 
 func main() {
-    configPath := "config.json"
+	configPath := "config.json"
 
-    config, err := loadConfig(configPath)
-    if err != nil {
-        log.Fatalf("Failed to load config: %v", err)
-    }
+	config, err := loadConfig(configPath)
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
 
-    folderToWatch := config.FolderToWatch
-    serverURL := config.URL
+	folderToWatch := config.FolderToWatch
+	serverURL := config.URL
 
-    lastModTimes := make(map[string]time.Time)
+	lastModTimes := make(map[string]time.Time)
 
-    for {
-        checkForChanges(folderToWatch, lastModTimes, serverURL)
-        time.Sleep(10 * time.Second)
-    }
+	for {
+		checkForChanges(folderToWatch, lastModTimes, serverURL)
+		time.Sleep(10 * time.Second)
+	}
 }

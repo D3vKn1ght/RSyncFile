@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Header
 import os
 import gzip
 import shutil
@@ -8,13 +8,18 @@ app = FastAPI()
 UPLOAD_FOLDER = "/upload"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+@app.get("/")
+async def root():
+    return {"message": "Hello World"}
+
 @app.post("/uploadfile/")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(file: UploadFile = File(...), filename: str = Header(...)):
     try:
         if not file:
             raise HTTPException(status_code=400, detail="No file uploaded")
 
-        tmp_file_location = os.path.join(UPLOAD_FOLDER, f"{file.filename}.tmp")
+        tmp_file_location = os.path.join(UPLOAD_FOLDER, f"{filename}.tmp")
+        os.makedirs(os.path.dirname(tmp_file_location), exist_ok=True)
         with open(tmp_file_location, "wb") as tmp_file:
             content = await file.read()
             tmp_file.write(content)
