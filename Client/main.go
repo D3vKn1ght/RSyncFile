@@ -18,7 +18,9 @@ type Config struct {
     URL             string `json:"url"`
     FolderToWatch   string `json:"folder_to_watch"`
     FolderToReceive string `json:"folder_to_receive"`
+    TimeToWait      int    `json:"time_to_wait"`  // Thêm trường TimeToWait
 }
+
 
 func loadConfig(configPath string) (Config, error) {
     var config Config
@@ -233,7 +235,8 @@ func main() {
     lastModTimes := make(map[string]time.Time)
 
     for {
-        checkForChanges(folderToWatch,folderToWatch, lastModTimes, serverURL)
-        time.Sleep(10 * time.Second)
+        checkForChanges(folderToWatch, folderToWatch, lastModTimes, serverURL)
+        time.Sleep(time.Duration(config.TimeToWait) * time.Second)  // Sử dụng TimeToWait
     }
 }
+

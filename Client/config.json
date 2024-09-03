@@ -1,5 +1,6 @@
 {
-    "url": "http://localhost:7888",
-    "folder_to_watch": "C:\\PathToWatch",
-    "folder_to_receive":"C:\\PathToReceive"
+    "url": "http://192.168.221.209:7888",
+    "folder_to_watch": "C:\\RSyncFolder",
+    "folder_to_receive": "C:\\Users\\Administrator\\Desktop\\test",
+    "time_to_wait": 10
 }
