@@ -38,7 +38,7 @@ docker build -t rsyncfile .
 1. Chạy server FastAPI:
 
 ```jsx
-docker run -p 7888:7888 -v /path_folder_dupload:/upload -v /path_folder_download:/download rsyncfile
+docker run -p 7888:7888 -v /path_folder_upload:/upload -v /path_folder_download:/download rsyncfile
 ```
 
 ### 3. Chạy Client
