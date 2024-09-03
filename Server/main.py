@@ -1,9 +1,10 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
 import os
+import gzip
+import shutil
 
 app = FastAPI()
 
-# Đảm bảo thư mục /upload tồn tại
 UPLOAD_FOLDER = "/upload"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -14,18 +15,20 @@ async def upload_file(file: UploadFile = File(...)):
             raise HTTPException(status_code=400, detail="No file uploaded")
 
         tmp_file_location = os.path.join(UPLOAD_FOLDER, f"{file.filename}.tmp")
-
         with open(tmp_file_location, "wb") as tmp_file:
             content = await file.read()
             tmp_file.write(content)
 
-        if not os.path.exists(tmp_file_location) or os.path.getsize(tmp_file_location) == 0:
-            raise HTTPException(status_code=500, detail="Failed to save the uploaded file")
+        gz_file_location = tmp_file_location
+        final_file_location = gz_file_location.rstrip(".tmp").rstrip(".gz")
 
-        final_file_location = os.path.join(UPLOAD_FOLDER, file.filename)
-        os.rename(tmp_file_location, final_file_location)
+        with gzip.open(gz_file_location, 'rb') as f_in:
+            with open(final_file_location, 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
 
-        return {"filename": file.filename, "status": "File uploaded and renamed successfully"}
+        os.remove(gz_file_location)
+
+        return {"filename": final_file_location, "status": "File uploaded, extracted, and renamed successfully"}
 
     except HTTPException as http_exc:
         raise http_exc
@@ -36,4 +39,4 @@ async def upload_file(file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=7888)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
