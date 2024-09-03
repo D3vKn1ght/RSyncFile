@@ -1,4 +1,5 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Header
+from fastapi.responses import FileResponse
 import os
 import gzip
 import shutil
@@ -6,7 +7,9 @@ import shutil
 app = FastAPI()
 
 UPLOAD_FOLDER = "/upload"
+DOWNLOAD_FOLDER = "/download"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 @app.post("/uploadfile/")
 async def upload_file(file: UploadFile = File(...), filename: str = Header(None, alias="X-Filename")):
@@ -59,6 +62,24 @@ async def delete_file(filename: str = Header(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred during file deletion: {str(e)}")
 
+@app.get("/download/")
+async def download_files():
+    files = os.listdir(DOWNLOAD_FOLDER)
+    if not files:
+        raise HTTPException(status_code=404, detail="No files found")
+
+    return {"files": files} 
+
+@app.get("/download/{filename}")
+async def download_file(filename: str):
+    file_location = os.path.normpath(os.path.join(DOWNLOAD_FOLDER, filename))
+    if not file_location.startswith(DOWNLOAD_FOLDER):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
+    if not os.path.exists(file_location):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileResponse(file_location, filename=filename)
 
 if __name__ == "__main__":
     import uvicorn
